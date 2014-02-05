@@ -16,5 +16,7 @@ int main(int argc, char *argv[]){
 }
 
 void *test(void *x){
-   printf("%d\n", x);
+   int i;
+   for(i=0;i<=10;i++) printf("%d\t", i);
+   printf("\n");
 }
