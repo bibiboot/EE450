@@ -119,13 +119,59 @@ void print_init(){
     printf("WWWROOT: %s\n", WWWROOT);
 }
 
-void run_thread(char *buff){
-     char htype[100], url[100], version[100];
+int get_contentLength(FILE *fp){
+    fseek(fp, 0, SEEK_END);
+    int contentLength = ftell(fp);
+    return contentLength;
+}
 
+void sendHeader(char *status_code, char *content_type, int totalSize, int sock)
+{
+        char *head = "\r\nHTTP/1.1 ";
+        char *content_head = "\r\nContent-Type: ";
+        char *length_head = "\r\nContent-Length: ";
+        char *date_head = "\r\nDate: ";
+        char *newline = "\r\n";
+        char contentLength[100];
+        char message[1000];
+
+        time_t rawtime;
+        time(&rawtime);
+
+        sprintf(contentLength, "%d", totalSize);
+
+        strcat(message, head);
+        strcat(message, status_code);
+        strcat(message, content_head);
+        strcat(message, content_type);
+        strcat(message, length_head);
+        strcat(message, contentLength);
+        strcat(message, date_head);
+        strcat(message, (char *)ctime(&rawtime));
+        strcat(message, newline);
+
+        sendString(message, sock);
+
+}
+
+
+void run_thread(char *buff, int sock){
+    // Main Excecution function
+    char line[100];
+
+    // Parse request and create structure from it.
     struct header *h = get_request(buff);
-    printf("%s\n", h->path);
 
+    // Get the File 
     FILE *fp = fopen(h->path, "r");
+    
+    // Get content length
+    int contentLength = get_contentLength(fp);
+
+    // Send Header
+    sendHeader("200 OK", "text/html", contentLength, sock);
+
+    //Send File
     
 }
 
@@ -159,8 +205,9 @@ void start(){
         if(send(new_sock, "Welcome new client", 100, 0)==-1){
             perror("send");
         }
-
-        run_thread(buff);
+    
+        // Execution thread    
+        run_thread(buff, new_sock);
 
         close(new_sock);
 
