@@ -12,15 +12,19 @@ int main(int argc, char *argv[]){
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     
-    getaddrinfo("127.0.0.1", "2003", &hints, &res);
+    getaddrinfo("127.0.0.1", "7000", &hints, &res);
 
     int client_sock = socket(res->ai_family, res->ai_socktype, 0);
 
     connect(client_sock, res->ai_addr, res->ai_addrlen); 
 
-    //send(client_sock, "I am client\n", 100, 0);
+    if(send(client_sock, "I am client\n", 100, 0) == -1){
+        perror("Send\n");
+    }
 
-    recv(client_sock, buff, 1000, 0);
+    if(recv(client_sock, buff, 1000, 0) == -1){
+        perror("Recv\n");
+    }
     printf("XXX\n");
     printf("%s\n", buff);
 

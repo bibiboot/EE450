@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <signal.h>
+#include <pthread.h>
 
 char PORT[100] ;
 char HOST[100];
@@ -14,10 +15,15 @@ char *CONFIG_FILE = "httpd.conf";
 struct sigaction ACT;
 sigset_t SET;
 
+struct request {
+    char d[1000];
+};
+
 void interrupt_main(){
 
     //Kill the threads
     //pthread_kill(0);
+    printf("Server shutting down\n");
     exit(0);
 
 }
@@ -65,9 +71,29 @@ void print_init(){
     printf("WWWROOT: %s\n", WWWROOT);
 }
 
+void *run(void *data){
+    printf("Thread finishing task\n");
+    struct request *req = (struct request*)data;
+    //while(1){
+    printf("%s\n", req->d);
+   // }
+}
+
+void run_thread(char *buff){
+    pthread_t th;   
+    
+    struct request *re = (struct request*)malloc(sizeof(struct request*));
+    strcpy(re->d, buff);
+
+    pthread_create(&th, NULL, run, (void *)re->d); 
+
+    pthread_join(th, NULL);
+}
+
 void start(){
 
     struct addrinfo hints, *res;
+    char buff[1000];
     
     memset(&hints, 0, 1000);
     hints.ai_family = AF_INET;
@@ -87,10 +113,14 @@ void start(){
         printf("Waiting for Connection....\n");
         int new_sock = accept(skid, res->ai_addr, &(res->ai_addrlen));
         printf("Connection made....\n");
+    
+        recv(new_sock, buff, 1000, 0);
 
         if(send(new_sock, "Welcome new client", 100, 0)==-1){
             perror("send");
         }
+
+        run_thread(buff);
 
         close(new_sock);
 
