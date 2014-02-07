@@ -4,11 +4,37 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <signal.h>
 
 char PORT[100] ;
 char HOST[100];
 char WWWROOT[100];
 char *CONFIG_FILE = "httpd.conf";
+
+struct sigaction ACT;
+sigset_t SET;
+
+void interrupt_main(){
+
+    //Kill the threads
+    //pthread_kill(0);
+    exit(0);
+
+}
+
+void block_signal(){
+    sigemptyset(&SET);
+    sigaddset(&SET, SIGINT); 
+    pthread_sigmask(SIG_BLOCK, &SET, NULL);
+}
+
+void unblock_signal(){
+    sigaddset(&SET, SIGINT); 
+    pthread_sigmask(SIG_UNBLOCK, &SET, NULL);
+ 
+    ACT. sa_handler = interrupt_main;
+    sigaction(SIGINT, &ACT, NULL);
+}
 
 void init(){
 
@@ -56,6 +82,7 @@ void start(){
     listen(skid, 10);
 
     while(1){
+        unblock_signal();
 
         printf("Waiting for Connection....\n");
         int new_sock = accept(skid, res->ai_addr, &(res->ai_addrlen));
@@ -70,9 +97,12 @@ void start(){
     }
 }
 
+
+
 int main(int argc, char *argv[]){
     init();
     print_init();
+    block_signal();
 
     start();
 
