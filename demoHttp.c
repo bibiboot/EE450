@@ -15,17 +15,65 @@ char *CONFIG_FILE = "httpd.conf";
 struct sigaction ACT;
 sigset_t SET;
 
-struct request {
-    char d[1000];
+struct header {
+    char htype[100];
+    char url[100];
+    char version[100];
+    char host[100];
+    char connection[100];
+    char cache_control[100];
+    char accept[100];
+    char ua[100];
+    char accept_encoding[100];
+    char accept_lang[100]; 
+    char cookie[100];
+    char path[100];
+    char *filename;
 };
 
-void interrupt_main(){
+void get_header(char *header_string, char *target_header, char *res){
+    char key[100];
+    char *token, *inner_tokken;
+    char *temp = strdup(header_string);
 
+    while((token=strsep(&temp, "\n"))!=NULL){
+        sscanf(token, "%[^:]:%s", key, res);
+        if(strcmp(target_header, key)==0) return; 
+    }
+}
+
+void get_status_line(char *header_string, char *htype, char *url, char *version, char *filename){
+    char *token;
+    char *temp = strdup(header_string);
+
+    while((token=strsep(&temp, "\n"))!=NULL){
+        sscanf(token, "%[^ ] %[^ ] %s", htype, url, version);
+        filename = strrchr(url, '/') + 1;
+        break;
+    }
+}
+
+struct header* get_request(char *buff){
+
+    // Convert the header in protocl to structure
+
+    struct header *h = (struct header *)malloc(sizeof(struct header *));
+    get_status_line(buff, h->htype, h->url, h->version, h->filename);
+
+    get_header(buff, "Cookie", h->cookie);
+    get_header(buff, "Cache-Control", h->cache_control);
+
+    strcpy(h->path, WWWROOT);
+    strcat(h->path, h->url+1);
+
+    return h;
+}
+
+void interrupt_main(){
     //Kill the threads
-    //pthread_kill(0);
+
     printf("Server shutting down\n");
     exit(0);
-
 }
 
 void block_signal(){
@@ -71,26 +119,18 @@ void print_init(){
     printf("WWWROOT: %s\n", WWWROOT);
 }
 
-void *run(void *data){
-    printf("Thread finishing task\n");
-    struct request *req = (struct request*)data;
-    //while(1){
-    printf("%s\n", req->d);
-   // }
-}
-
 void run_thread(char *buff){
-    pthread_t th;   
+     char htype[100], url[100], version[100];
+
+    struct header *h = get_request(buff);
+    printf("%s\n", h->path);
+
+    FILE *fp = fopen(h->path, "r");
     
-    struct request *re = (struct request*)malloc(sizeof(struct request*));
-    strcpy(re->d, buff);
-
-    pthread_create(&th, NULL, run, (void *)re->d); 
-
-    pthread_join(th, NULL);
 }
 
 void start(){
+    // Create network socket
 
     struct addrinfo hints, *res;
     char buff[1000];
@@ -127,13 +167,10 @@ void start(){
     }
 }
 
-
-
 int main(int argc, char *argv[]){
     init();
     print_init();
     block_signal();
 
     start();
-
 }
