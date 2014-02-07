@@ -57,21 +57,23 @@ void start(){
 
     while(1){
 
+        printf("Waiting for Connection....\n");
         int new_sock = accept(skid, res->ai_addr, &(res->ai_addrlen));
+        printf("Connection made....\n");
 
-        send(new_sock, "Welcome new client\n", 1000, 0);
+        if(send(new_sock, "Welcome new client", 100, 0)==-1){
+            perror("send");
+        }
 
         close(new_sock);
 
     }
-
-    return 0;
 }
 
 int main(int argc, char *argv[]){
     init();
+    print_init();
 
     start();
 
-    print_init();
 }
