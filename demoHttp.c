@@ -15,6 +15,9 @@ char *CONFIG_FILE = "httpd.conf";
 struct sigaction ACT;
 sigset_t SET;
 
+int CONNECT_SOCK;
+int SOCK;
+
 struct header {
     char htype[100];
     char url[100];
@@ -28,7 +31,7 @@ struct header {
     char accept_lang[100]; 
     char cookie[100];
     char path[100];
-    char *filename;
+    char filename[1000];
 };
 
 void get_header(char *header_string, char *target_header, char *res){
@@ -43,36 +46,41 @@ void get_header(char *header_string, char *target_header, char *res){
 }
 
 void get_status_line(char *header_string, char *htype, char *url, char *version, char *filename){
+    // Sets the http-type, Url, version and filename
     char *token;
     char *temp = strdup(header_string);
 
     while((token=strsep(&temp, "\n"))!=NULL){
         sscanf(token, "%[^ ] %[^ ] %s", htype, url, version);
-        filename = strrchr(url, '/') + 1;
+        strcpy(filename, (strrchr(url, '/') + 1));
         break;
     }
 }
 
-struct header* get_request(char *buff){
+int get_request(char *buff, struct header **h){
 
     // Convert the header in protocl to structure
 
-    struct header *h = (struct header *)malloc(sizeof(struct header *));
-    get_status_line(buff, h->htype, h->url, h->version, h->filename);
+    get_status_line(buff, (*h)->htype, (*h)->url, (*h)->version, (*h)->filename);
 
-    get_header(buff, "Cookie", h->cookie);
-    get_header(buff, "Cache-Control", h->cache_control);
+    // Create header structure
+    char temp[100];
+    get_header(buff, "Cookie", temp);
+    strcpy((*h)->cookie, temp);
+    //get_header(buff, "Accept-Language", temp);
+    //strcpy(h->accept_lang, temp);
 
-    strcpy(h->path, WWWROOT);
-    strcat(h->path, h->url+1);
+    strcpy((*h)->path, WWWROOT);
+    strcat((*h)->path, (*h)->url+1);
 
-    return h;
+    return 0;
 }
 
 void interrupt_main(){
     //Kill the threads
 
     printf("Server shutting down\n");
+    close(SOCK);
     exit(0);
 }
 
@@ -114,26 +122,54 @@ void init(){
 }
 
 void print_init(){
+    // Print Stats
+    printf("........................\n");
     printf("PORT: %s\n", PORT);
     printf("HOST: %s\n", HOST);
     printf("WWWROOT: %s\n", WWWROOT);
+    printf("........................\n");
 }
 
 int get_contentLength(FILE *fp){
+    // Get size of the file
     fseek(fp, 0, SEEK_END);
     int contentLength = ftell(fp);
+    rewind(fp);
     return contentLength;
 }
 
-void sendHeader(char *status_code, char *content_type, int totalSize, int sock)
+int extension(char *filename, char *res){
+    // Get extention of the file
+    strcpy(res, strchr(filename, '.')+1) ;
+    return 0;
+}
+
+int  sendFile(FILE *fp){
+    // Send the file over socket
+    int ch;
+    while((ch = fgetc(fp))!=EOF){
+        send(CONNECT_SOCK, &ch, sizeof(char), 0);
+    }
+    return 0;
+}
+
+int sendString(char *message){
+    // Send the string over socket
+    send(CONNECT_SOCK, message, strlen(message), 0);
+    return 0;
+}
+
+void sendHeader(char *status_code, char *content_type, int totalSize)
 {
+        // Create the response
+
         char *head = "\r\nHTTP/1.1 ";
         char *content_head = "\r\nContent-Type: ";
         char *length_head = "\r\nContent-Length: ";
         char *date_head = "\r\nDate: ";
         char *newline = "\r\n";
         char contentLength[100];
-        char message[1000];
+        char message[90000];
 
         time_t rawtime;
         time(&rawtime);
@@ -142,37 +178,55 @@ void sendHeader(char *status_code, char *content_type, int totalSize, int sock)
 
         strcat(message, head);
         strcat(message, status_code);
+
         strcat(message, content_head);
         strcat(message, content_type);
+
         strcat(message, length_head);
         strcat(message, contentLength);
+
         strcat(message, date_head);
         strcat(message, (char *)ctime(&rawtime));
+
         strcat(message, newline);
 
-        sendString(message, sock);
+        sendString(message);
 
+        printf("...................RESPONSE........\n%s", message);
 }
 
 
-void run_thread(char *buff, int sock){
+void run_thread(char *buff){
+
+    struct header *h = (struct header *)malloc(100*sizeof(struct header *));
+
     // Main Excecution function
-    char line[100];
+    char ext[100];
 
     // Parse request and create structure from it.
-    struct header *h = get_request(buff);
+    get_request(buff, &h);
 
     // Get the File 
     FILE *fp = fopen(h->path, "r");
+    if(fp==NULL) return;
     
     // Get content length
     int contentLength = get_contentLength(fp);
 
-    // Send Header
-    sendHeader("200 OK", "text/html", contentLength, sock);
+    // Get Extension to check with mime types availabe
+    extension(h->filename, ext);
 
-    //Send File
+    // Get the right mime
     
+
+    // Send Header
+    sendHeader("200 OK", "text/html", contentLength);
+
+    // Send File
+    sendFile(fp);
+
+    // Close the File
+    close(fp);
 }
 
 void start(){
@@ -187,34 +241,32 @@ void start(){
 
     getaddrinfo(HOST, PORT, &hints, &res);
 
-    int skid = socket(res->ai_family, res->ai_socktype, 0);
+    SOCK = socket(res->ai_family, res->ai_socktype, 0);
 
-    bind(skid, res->ai_addr, res->ai_addrlen);
+    bind(SOCK, res->ai_addr, res->ai_addrlen);
 
-    listen(skid, 10);
+    listen(SOCK, 10);
 
     while(1){
         unblock_signal();
 
-        printf("Waiting for Connection....\n");
-        int new_sock = accept(skid, res->ai_addr, &(res->ai_addrlen));
-        printf("Connection made....\n");
+        printf("...............WAITING...............\n");
+        CONNECT_SOCK = accept(SOCK, res->ai_addr, &(res->ai_addrlen));
     
-        recv(new_sock, buff, 1000, 0);
+        // Recv request
+        recv(CONNECT_SOCK, buff, 1000, 0);
 
-        if(send(new_sock, "Welcome new client", 100, 0)==-1){
-            perror("send");
-        }
-    
         // Execution thread    
-        run_thread(buff, new_sock);
+        printf("...............REQUEST...............\n%s", buff);
+        run_thread(buff);
 
-        close(new_sock);
-
+        // Threads job done, close the socket
+        close(CONNECT_SOCK);
     }
 }
 
 int main(int argc, char *argv[]){
+    // Execution starts here
     init();
     print_init();
     block_signal();
