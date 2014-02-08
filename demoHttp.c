@@ -6,6 +6,7 @@
 #include <netdb.h>
 #include <signal.h>
 #include <pthread.h>
+#include "cache.h"
 
 char PORT[100] ;
 char HOST[100];
@@ -34,6 +35,16 @@ struct header {
     char filename[1000];
 };
 
+int checkHttp(char *httpV, char *req){
+    if(strcmp(httpV, "HTTP/1.1")==0 || strcmp(httpV, "HTTP/1.0")==0){
+       if(strcmp(req, "GET")==0 || strcmp("HEAD", req)==0){
+           return 0;
+       }
+      
+    }
+    return -1;
+}
+
 void get_header(char *header_string, char *target_header, char *res){
     char key[100];
     char *token, *inner_tokken;
@@ -57,21 +68,18 @@ void get_status_line(char *header_string, char *htype, char *url, char *version,
     }
 }
 
-int get_request(char *buff, struct header **h){
+int get_request(char *buff, struct header *h){
 
     // Convert the header in protocl to structure
 
-    get_status_line(buff, (*h)->htype, (*h)->url, (*h)->version, (*h)->filename);
+    get_status_line(buff, h->htype, h->url, h->version, h->filename);
 
     // Create header structure
-    char temp[100];
-    get_header(buff, "Cookie", temp);
-    strcpy((*h)->cookie, temp);
-    //get_header(buff, "Accept-Language", temp);
-    //strcpy((*h)->accept_lang, temp);
+    get_header(buff, "Cookie", h->cookie);
+    get_header(buff, "Accept-Language", h->accept_lang);
 
-    strcpy((*h)->path, WWWROOT);
-    strcat((*h)->path, (*h)->url+1);
+    strcpy(h->path, WWWROOT);
+    strcat(h->path, h->url+1);
 
     return 0;
 }
@@ -194,6 +202,7 @@ int sendHeader(char *status_code, char *content_type, int totalSize)
         sprintf(contentLength, "%d", totalSize);
 
         strcat(message, head);
+    
         strcat(message, status_code);
 
         strcat(message, content_head);
@@ -224,19 +233,24 @@ void run_thread(char *buff){
     struct header *h = (struct header *)malloc(100*sizeof(struct header *));
 
     // Parse request and create structure from it.
-    if(get_request(buff, &h)==-1) return;
+    if(get_request(buff, h)==-1) return;
 
+    if(checkHttp(h->version, h->htype)==-1){
+        printf("ERROR: Not known Version\n");
+        sendString("501 Not Implemented\n");
+        return ;
+    }
     
     // Get Extension to check with mime types availabe
     if(extension(h->filename, ext)==-1){
-        printf("Wrong extension\n");
+        printf("ERROR: Wrong extension\n");
         sendString("400 Bad Request\n");   
         return ;
     }
 
     // Get the right mime
     if(checkMime(ext, mime)==-1){
-        printf("Wrong MIME type\n");
+        printf("ERROR: Wrong MIME type\n");
         sendString("400 Bad Request\n");
         return;
     }
@@ -244,7 +258,7 @@ void run_thread(char *buff){
     // Get the File 
     FILE *fp = fopen(h->path, "r");
     if(fp==NULL){
-        printf("Wrong file path\n");
+        printf("ERROR: Wrong file path\n");
         sendString("404 Not Found\n");
         return ;
     }
@@ -257,7 +271,10 @@ void run_thread(char *buff){
     if(sendHeader("200 OK", mime, contentLength)==-1) return;
 
     // Send File
-    if(sendFile(fp) ==-1) return;
+    if(strcmp(h->htype, "GET")==0){
+        // Send file only in case of a GET request
+        if(sendFile(fp) ==-1) return;
+    }
 
     // Close the File
     close(fp);
