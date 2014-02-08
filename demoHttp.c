@@ -68,7 +68,7 @@ int get_request(char *buff, struct header **h){
     get_header(buff, "Cookie", temp);
     strcpy((*h)->cookie, temp);
     //get_header(buff, "Accept-Language", temp);
-    //strcpy(h->accept_lang, temp);
+    //strcpy((*h)->accept_lang, temp);
 
     strcpy((*h)->path, WWWROOT);
     strcat((*h)->path, (*h)->url+1);
@@ -130,6 +130,22 @@ void print_init(){
     printf("........................\n");
 }
 
+int checkMime(char *ext, char *mime){
+    FILE *fp = fopen("mime.types", "r");
+    char line[1000], key[100], value[100];
+
+    while((fgets(line, 1000, fp))!=NULL){
+        if(line[0]=='#') continue;
+
+        sscanf(line, "%[^\t]\t%s", key, value);
+        if(strcmp(value, ext)==0) {
+            strcpy(mime, key);
+            return 0;
+        }
+    }
+    return -1;
+}
+
 int get_contentLength(FILE *fp){
     // Get size of the file
     fseek(fp, 0, SEEK_END);
@@ -159,7 +175,7 @@ int sendString(char *message){
     return 0;
 }
 
-void sendHeader(char *status_code, char *content_type, int totalSize)
+int sendHeader(char *status_code, char *content_type, int totalSize)
 {
         // Create the response
 
@@ -170,6 +186,7 @@ void sendHeader(char *status_code, char *content_type, int totalSize)
         char *newline = "\r\n";
         char contentLength[100];
         char message[90000];
+        strcpy(message, "");
 
         time_t rawtime;
         time(&rawtime);
@@ -193,40 +210,58 @@ void sendHeader(char *status_code, char *content_type, int totalSize)
         sendString(message);
 
         printf("...................RESPONSE........\n%s", message);
+        return 0;
 }
 
 
 void run_thread(char *buff){
+    // Main Excecution function
+
+    char *mime = (char *)malloc(100);
+    memset(mime, '\0', 100);
+    char ext[100];
 
     struct header *h = (struct header *)malloc(100*sizeof(struct header *));
 
-    // Main Excecution function
-    char ext[100];
-
     // Parse request and create structure from it.
-    get_request(buff, &h);
+    if(get_request(buff, &h)==-1) return;
+
+    
+    // Get Extension to check with mime types availabe
+    if(extension(h->filename, ext)==-1){
+        printf("Wrong extension\n");
+        sendString("400 Bad Request\n");   
+        return ;
+    }
+
+    // Get the right mime
+    if(checkMime(ext, mime)==-1){
+        printf("Wrong MIME type\n");
+        sendString("400 Bad Request\n");
+        return;
+    }
 
     // Get the File 
     FILE *fp = fopen(h->path, "r");
-    if(fp==NULL) return;
+    if(fp==NULL){
+        printf("Wrong file path\n");
+        sendString("404 Not Found\n");
+        return ;
+    }
     
     // Get content length
     int contentLength = get_contentLength(fp);
-
-    // Get Extension to check with mime types availabe
-    extension(h->filename, ext);
-
-    // Get the right mime
-    
+    if(contentLength<0) return;
 
     // Send Header
-    sendHeader("200 OK", "text/html", contentLength);
+    if(sendHeader("200 OK", mime, contentLength)==-1) return;
 
     // Send File
-    sendFile(fp);
+    if(sendFile(fp) ==-1) return;
 
     // Close the File
     close(fp);
+
 }
 
 void start(){
