@@ -13,6 +13,9 @@ char HOST[100];
 char WWWROOT[100];
 char *CONFIG_FILE = "httpd.conf";
 
+struct header *REQUEST[100];
+int TOP = -1;
+
 struct sigaction ACT;
 sigset_t SET;
 
@@ -35,6 +38,16 @@ struct header {
     char buff[1000];
     int sockid;
 };
+
+void push(struct header *h){
+    if(TOP==99) return;
+    REQUEST[++TOP] = h;
+}
+
+struct header *pop(){
+    if(TOP==-1) return NULL;
+    return REQUEST[TOP--];
+}
 
 int checkHttp(char *httpV, char *req){
     if(strcmp(httpV, "HTTP/1.1")==0 || strcmp(httpV, "HTTP/1.0")==0){
