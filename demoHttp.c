@@ -15,6 +15,7 @@ char *CONFIG_FILE = "httpd.conf";
 
 struct header *REQUEST[100];
 int TOP = -1;
+pthread_mutex_t lock;
 
 struct sigaction ACT;
 sigset_t SET;
@@ -241,7 +242,8 @@ void *run_thread(void *data){
     // Main Excecution function
 
    // Convert data to header data
-    struct header *h = (struct header *)data;
+    //struct header *h = (struct header *)data;
+    struct header *h = pop();
 
     char *mime = (char *)malloc(100);
     memset(mime, '\0', 100);
@@ -303,7 +305,8 @@ void *run_thread(void *data){
 void run(struct header *h){
 
     pthread_t th;
-    pthread_create(&th, NULL, run_thread, (void*)h);
+    //pthread_create(&th, NULL, run_thread, (void*)h);
+    pthread_create(&th, NULL, run_thread, NULL);
 }
 
 void start(){
@@ -338,6 +341,9 @@ void start(){
         struct header *h = (struct header *)malloc(sizeof(*h));
         strcpy(h->buff, buff);
         h->sockid = connect_sock;
+
+        push(h);
+
         run(h);
         //run_thread(buff);
 
@@ -348,6 +354,8 @@ void start(){
 
 int main(int argc, char *argv[]){
     // Execution starts here
+
+    pthread_mutex_init(&lock, NULL);
     init();
     print_init();
     block_signal();
