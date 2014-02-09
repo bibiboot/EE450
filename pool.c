@@ -44,7 +44,7 @@ void *pool_manager(void *attr){
             pthread_cond_wait(&cond, &m);
         }
         int request = pop();
-        printf("%d = %d\n", request, curr);
+        printf("%d = ThreadID %d\n", request, curr);
         pthread_mutex_unlock(&m);
 
     }
