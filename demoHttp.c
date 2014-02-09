@@ -16,7 +16,6 @@ char *CONFIG_FILE = "httpd.conf";
 struct sigaction ACT;
 sigset_t SET;
 
-int CONNECT_SOCK;
 int SOCK;
 
 struct header {
@@ -33,6 +32,8 @@ struct header {
     char cookie[100];
     char path[100];
     char filename[1000];
+    char buff[1000];
+    int sockid;
 };
 
 int checkHttp(char *httpV, char *req){
@@ -168,22 +169,22 @@ int extension(char *filename, char *res){
     return 0;
 }
 
-int  sendFile(FILE *fp){
+int  sendFile(FILE *fp, int sock){
     // Send the file over socket
     int ch;
     while((ch = fgetc(fp))!=EOF){
-        send(CONNECT_SOCK, &ch, sizeof(char), 0);
+        send(sock, &ch, sizeof(char), 0);
     }
     return 0;
 }
 
-int sendString(char *message){
+int sendString(char *message, int sock){
     // Send the string over socket
-    send(CONNECT_SOCK, message, strlen(message), 0);
+    send(sock, message, strlen(message), 0);
     return 0;
 }
 
-int sendHeader(char *status_code, char *content_type, int totalSize)
+int sendHeader(char *status_code, char *content_type, int totalSize, int sock)
 {
         // Create the response
 
@@ -216,42 +217,46 @@ int sendHeader(char *status_code, char *content_type, int totalSize)
 
         strcat(message, newline);
 
-        sendString(message);
+        sendString(message, sock);
 
         printf("...................RESPONSE........\n%s", message);
         return 0;
 }
 
 
-void run_thread(char *buff){
+void *run_thread(void *data){
     // Main Excecution function
+
+   // Convert data to header data
+    struct header *h = (struct header *)data;
 
     char *mime = (char *)malloc(100);
     memset(mime, '\0', 100);
     char ext[100];
 
-    struct header *h = (struct header *)malloc(100*sizeof(struct header *));
+    pthread_t curr_th = pthread_self();
+    printf("Thread id = %d\n", (int)curr_th);
 
     // Parse request and create structure from it.
-    if(get_request(buff, h)==-1) return;
+    if(get_request(h->buff, h)==-1) return;
 
     if(checkHttp(h->version, h->htype)==-1){
         printf("ERROR: Not known Version\n");
-        sendString("501 Not Implemented\n");
+        sendString("501 Not Implemented\n", h->sockid);
         return ;
     }
     
     // Get Extension to check with mime types availabe
     if(extension(h->filename, ext)==-1){
         printf("ERROR: Wrong extension\n");
-        sendString("400 Bad Request\n");   
+        sendString("400 Bad Request\n", h->sockid);   
         return ;
     }
 
     // Get the right mime
     if(checkMime(ext, mime)==-1){
         printf("ERROR: Wrong MIME type\n");
-        sendString("400 Bad Request\n");
+        sendString("400 Bad Request\n", h->sockid);
         return;
     }
 
@@ -259,7 +264,7 @@ void run_thread(char *buff){
     FILE *fp = fopen(h->path, "r");
     if(fp==NULL){
         printf("ERROR: Wrong file path\n");
-        sendString("404 Not Found\n");
+        sendString("404 Not Found\n", h->sockid);
         return ;
     }
     
@@ -268,17 +273,24 @@ void run_thread(char *buff){
     if(contentLength<0) return;
 
     // Send Header
-    if(sendHeader("200 OK", mime, contentLength)==-1) return;
+    if(sendHeader("200 OK", mime, contentLength, h->sockid)==-1) return;
 
     // Send File
     if(strcmp(h->htype, "GET")==0){
         // Send file only in case of a GET request
-        if(sendFile(fp) ==-1) return;
+        if(sendFile(fp, h->sockid) ==-1) return;
     }
 
     // Close the File
+    while(1);
     close(fp);
 
+}
+
+void run(struct header *h){
+
+    pthread_t th;
+    pthread_create(&th, NULL, run_thread, (void*)h);
 }
 
 void start(){
@@ -303,17 +315,21 @@ void start(){
         unblock_signal();
 
         printf("...............WAITING...............\n");
-        CONNECT_SOCK = accept(SOCK, res->ai_addr, &(res->ai_addrlen));
+        int connect_sock = accept(SOCK, res->ai_addr, &(res->ai_addrlen));
     
         // Recv request
-        recv(CONNECT_SOCK, buff, 1000, 0);
+        recv(connect_sock, buff, 1000, 0);
 
         // Execution thread    
         printf("...............REQUEST...............\n%s", buff);
-        run_thread(buff);
+        struct header *h = (struct header *)malloc(sizeof(*h));
+        strcpy(h->buff, buff);
+        h->sockid = connect_sock;
+        run(h);
+        //run_thread(buff);
 
         // Threads job done, close the socket
-        close(CONNECT_SOCK);
+        //`close(CONNECT_SOCK);
     }
 }
 
